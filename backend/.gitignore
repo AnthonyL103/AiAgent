@@ -1,0 +1,4 @@
+.env
+fastagent.secrets.yaml
+backend/.env
+backend/fastagent.secrets.yaml

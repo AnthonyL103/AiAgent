@@ -1,0 +1,28 @@
+mcp:
+  # Remove the 'servers:' wrapper - MCP servers should be defined directly under 'mcp:'
+  servers:
+    search_logs:
+      command: "uv"
+      args: ["run", "/Users/anthonyli/VDBSimSearchDemo/backend/FastAgent/searchlogsserver.py"]
+
+llm:
+  provider: openai
+  model: gpt-4o
+  reasoning_effort: medium
+    
+execution_engine: "asyncio"
+
+logger:
+  # level: "debug" | "info" | "warning" | "error"
+  # type: "none" | "console" | "file" | "http"
+  # path: "/path/to/logfile.jsonl"
+
+  # Switch the progress display on or off
+  progress_display: true
+
+  # Show chat User/Assistant messages on the console
+  show_chat: true
+  # Show tool calls on the console
+  show_tools: true
+  # Truncate long tool responses on the console
+  truncate_tools: true
