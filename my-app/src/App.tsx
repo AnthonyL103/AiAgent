@@ -34,12 +34,11 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement> | React.Keyboard
     setIsLoading(true);
     setError('');
     
-    // Add user message to conversation immediately
     const userMessage: UserMessage = { type: 'user', content: prompt, timestamp: new Date() };
     setConversation((prev: Message[]) => [...prev, userMessage]);
     
     const currentPrompt = prompt;
-    setPrompt(''); // Clear input immediately for better UX
+    setPrompt(''); 
 
     try {
         const response: Response = await fetch("http://localhost:8000/get_prompt", {
@@ -54,15 +53,27 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement> | React.Keyboard
             throw new Error(`Failed to fetch: ${response.status}`);
         }
         
-        const data: { result: string } = await response.json();
+        const data = await response.json();
+                
         
-        // Add agent response to conversation
-        const agentMessage: AgentMessage = { 
-            type: 'agent', 
-            content: data.result, 
-            timestamp: new Date() 
-        };
-        setConversation((prev: Message[]) => [...prev, agentMessage]);
+        if (data.type === 'human_input_required' || data.status === 'requires_input') {
+            const agentMessage: AgentMessage = {
+                type: 'agent',
+                content: data.prompt,
+                timestamp: new Date()
+            };
+            setConversation((prev: Message[]) => [...prev, agentMessage]);
+        }
+        
+        else if (data.status === 'success' || data.type === 'normal_response') {
+            const agentMessage: AgentMessage = {
+                type: 'agent',
+                content: data.result,
+                timestamp: new Date()
+            };
+            setConversation((prev: Message[]) => [...prev, agentMessage]);
+        }
+       
         
         console.log("Agent response:", data);
         
@@ -70,7 +81,6 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement> | React.Keyboard
         console.error(err);
         setError(`Error: ${err.message}`);
         
-        // Add error message to conversation
         const errorMessage: ErrorMessage = { 
             type: 'error', 
             content: `Sorry, there was an error: ${err.message}`, 
@@ -118,14 +128,14 @@ const handleKeyPress = (e: KeyPressEvent): void => {
 };
 
   return (
-    <div className="flex flex-col min-h-screen w-screen bg-gray-100">
+    <div className="flex flex-col min-h-screen min-w-screen bg-gray-100">
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full p-4">
         <div className="text-center py-6">
           <h1 className="text-3xl font-bold text-blue-600">Log Search Assistant</h1>
           <p className="text-gray-600 mt-2">Ask questions about your logs and metrics</p>
         </div>
 
-        <div className="flex-1 bg-white rounded-lg shadow-lg mb-4 p-4 overflow-y-auto max-h-96">
+        <div className="flex-1 bg-white rounded-lg shadow-lg mb-4 p-4 overflow-y-auto max-h-[65vh]">
           {conversation.length === 0 ? (
             <div className="text-center text-gray-500 py-8">
               <h2 className="text-xl mb-2">Welcome! 👋</h2>
@@ -185,7 +195,6 @@ const handleKeyPress = (e: KeyPressEvent): void => {
             />
             <button
               onClick={(e) => {
-                // Create a synthetic form event to satisfy handleSubmit's signature
                 const fakeEvent = {
                   preventDefault: () => {},
                 } as React.FormEvent<HTMLFormElement>;
@@ -209,7 +218,6 @@ const handleKeyPress = (e: KeyPressEvent): void => {
           </div>
         </div>
 
-        {/* Tips */}
         <div className="text-center text-sm text-gray-500 mt-4">
           <p>💡 You can ask follow-up questions - the assistant remembers our conversation!</p>
         </div>

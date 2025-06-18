@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from LlamaIndex.LlamaSearch import search_logs  
+from DataRetrievalTools.LlamaSearch import search_logs  
 
 mcp = FastMCP("SearchLogsServer")
 
