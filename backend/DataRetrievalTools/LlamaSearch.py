@@ -1,10 +1,9 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+
 import numpy as np
 from openai import OpenAI
 import pandas as pd  
-import json
 import os
+import json
 from dotenv import load_dotenv
 from llama_index.core import StorageContext, load_index_from_storage
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -16,9 +15,7 @@ from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.core.query_engine import SubQuestionQueryEngine
 from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.vector_stores.types import MetadataInfo, VectorStoreInfo
-import logging
 
-app = FastAPI()
 
 load_dotenv()
 
@@ -67,10 +64,33 @@ full_query_engine = SubQuestionQueryEngine.from_defaults(
     use_async=True,
 )
 
-
-async def search_logs(prompt: str) -> str:
-    query_result = full_query_engine.query(prompt)
-    return "\n\n".join([f"- {n.text}" for n in query_result.source_nodes[:10]])
+def extract_columns_info(nodes):
+    """Extract column names and sample values from search results"""
+    columns = {}
     
+    for node in nodes:
+        if node.metadata:
+            for key, value in node.metadata.items():
+                if key not in columns:
+                    columns[key] = set()
+                columns[key].add(str(value))
     
+    return {
+        column: list(values)[:5]  
+        for column, values in columns.items()
+    }
 
+async def search_logs_llama(prompt: str) -> str:
+    query_result = query_engine.query(prompt)
+    
+    sample_logs = [node.text for node in query_result.source_nodes[:3]]
+    
+    columns_info = extract_columns_info(query_result.source_nodes)
+    
+    result = {
+        "sample_logs": sample_logs,
+        "columns_info": columns_info,
+        "total_found": len(query_result.source_nodes)
+    }
+    
+    return json.dumps(result, indent=2)

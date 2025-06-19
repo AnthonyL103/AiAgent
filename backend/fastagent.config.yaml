@@ -1,10 +1,14 @@
 mcp:
-  # Remove the 'servers:' wrapper - MCP servers should be defined directly under 'mcp:'
   servers:
-    search_logs:
+    SearchLogsServer:
       command: "uv"
       args: ["run", "/Users/anthonyli/VDBSimSearchDemo/backend/FastAgent/searchlogsserver.py"]
-
+      
+    QueryLogsServer:
+      command: "uv"
+      args: ["run", "/Users/anthonyli/VDBSimSearchDemo/backend/FastAgent/querylogsserver.py"]
+      
+        
 llm:
   provider: openai
   model: gpt-4o

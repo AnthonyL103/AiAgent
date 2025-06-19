@@ -1,106 +1,189 @@
+from openai import OpenAI
+import json
+import os
+import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-'''
+client = OpenAI(api_key=os.getenv("API_KEY"))
+
 def safe_json_dumps(obj):
     return json.dumps(obj, allow_nan=False)
 
-
-def promptEmbedding(prompt):
-    print(prompt)
-    embedding = model.encode([prompt], normalize_embeddings=True)
-    return embedding[0].astype('float32')
-
-
-
-def getquery(prompt):
-    user_prompt = json.dumps(prompt)
-    system_prompt = """
-    You are a log retrieval AI agent. You will be given a user query.
-
-    Your job is to generate a QueryPlan JSON object that can be used to search a CSV file econtaining log data.
-
-    The CSV has the following columns:
-
+df = pd.read_csv('/Users/anthonyli/VDBSimSearchDemo/backend/DataRetrievalTools/testlog.csv', names=[
     'timestamp_full', 'timestamp_simple', 'unknown1', 'unknown2', 'unknown3', 
     'SeverityText', 'unknown4', 'ServiceName', 'message', 'schema_url', 'metadata_json', 
     'unknown5', 'class_name', 'unknown6', 'unknown7', 'order_result_json'
+])
 
-    Your QueryPlan should have this format:
+def apply_filters(df, filters, aggregation=None):
+    """Apply filters to the dataframe and return results"""
+    filtered_df = df.copy()
     
-    timestamp format for the logs is written as: "2025-06-08 10:37:37.043446300"
+    timestamp_range = filters.get("timestamp_full_range")
+    if timestamp_range:
+        start_time = timestamp_range.get("start")
+        end_time = timestamp_range.get("end")
+        
+        if start_time:
+            filtered_df = filtered_df[pd.to_datetime(filtered_df['timestamp_full']) >= pd.to_datetime(start_time)]
+        
+        if end_time:
+            filtered_df = filtered_df[pd.to_datetime(filtered_df['timestamp_full']) <= pd.to_datetime(end_time)]
     
-    if no start or end needed, just use null
-
-    {
-    "filters": {
-        "timestamp_full_range": { "start": , "end": },   
-        }
-    },
-    "semantic_query": string    // A semantic text string to be used for vector search which embeds the SeverityText + ServiceName + message + process_runtime_name 
+    for key, value in filters.items():
+        if key.endswith("_exact"):
+            column_name = key.replace("_exact", "")
+            if column_name in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df[column_name] == value]
+    
+    if aggregation:
+        return apply_aggregation(filtered_df, aggregation)
+    
+    return {
+        "type": "filtered_logs",
+        "count": len(filtered_df),
+        "logs": filtered_df.to_dict('records')[:100]  
     }
 
-    SeverityText can be:
-    -WARN
-    -INFO
+def apply_aggregation(df, aggregation):
+    """Apply aggregation operations to the dataframe"""
+    group_by = aggregation.get("group_by")
+    count = aggregation.get("count", False)
+    time_bucket = aggregation.get("time_bucket")
     
-    ServiceName can be:
-    -Accounting
-    -Ad
+    if not group_by:
+        return {"error": "group_by is required for aggregation"}
     
-    Message can be:
+    if group_by not in df.columns:
+        return {"error": f"Column {group_by} not found"}
     
-    -High cpu-load
-    -Targeted ad request received
-    -Non-targeted ad request received
-    -Order Details 
+    if time_bucket and group_by == "timestamp_full":
+        freq_map = {
+            "1m": "1T", "5m": "5T", "15m": "15T", "30m": "30T",
+            "1h": "1H", "2h": "2H", "6h": "6H", "12h": "12H",
+            "1d": "1D"
+        }
+        freq = freq_map.get(time_bucket, "1H")
+        
+        df['timestamp_dt'] = pd.to_datetime(df['timestamp_full'])
+        df['time_bucket'] = df['timestamp_dt'].dt.floor(freq)
+        group_by = "time_bucket"
     
-    Process_runtime_name can be:
-    -OpenJDK Runtime Environment
-    -.NET
-    
-    Instructions:
-    - All logs are from June 8th, 2025.
-    - Based on the options and the structure of how the embeddings are made, create the best semantic search prompt based on the user prompt if needed.
-    - If the user query mentions a time window (e.g. "yesterday", "last 2 hours"), extract it as timestamp_full_range.
-    - The semantic_query shoul only be for natural language related queries, leave it empty otherwise.
+    if count:
+        result = df.groupby(group_by).size().reset_index(name='count')
+        return {
+            "type": "aggregation",
+            "group_by": group_by,
+            "time_bucket": time_bucket,
+            "results": result.to_dict('records')
+        }
+    else:
+        grouped = df.groupby(group_by)
+        result = []
+        for name, group in grouped:
+            result.append({
+                group_by: name,
+                "count": len(group),
+                "sample_logs": group.head(3).to_dict('records')
+            })
+        
+        return {
+            "type": "grouped_logs",
+            "group_by": group_by,
+            "results": result
+        }
 
-    Output ONLY the JSON object. Do not include explanations.
-    """
+async def getquery(prompt, context=None):
+    user_prompt = json.dumps(prompt)
+    if context:
+        context_info = f"Discovered patterns: {context}"
+    else:
+        context_info = "No prior context available"
+        
+    system_prompt = f"""
+You are a data query generator. Generate a QueryPlan JSON object for filtering and analyzing data.
 
+{context_info}
 
+Your QueryPlan should have this format:
 
+        For simple counting (total count):
+        {{
+            "aggregation": {{
+                "count": true
+            }}
+        }}
 
+        For counting by groups:
+        {{
+            "aggregation": {{
+                "group_by": "ServiceName",
+                "count": true
+            }}
+        }}
 
+        For timestamp filtering:
+        {{
+            "filters": {{
+                "timestamp_full_range": {{ "start": "YYYY-MM-DD HH:MM:SS", "end": "YYYY-MM-DD HH:MM:SS" }}
+            }}
+        }}
 
-    response = client.chat.completions.create(model="gpt-4o",
-    messages=[
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ],
-    temperature=0)
+        For exact matches (use ACTUAL column names from context):
+        {{
+            "filters": {{
+                "SeverityText_exact": "INFO"
+            }}
+        }}
+
+        Output ONLY the JSON object. No explanations.
+        """
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0
+    )
 
     response_text = response.choices[0].message.content
     try:
         response_text = response_text.strip()
-        print("response",response_text)
+        print("LLM Response:", response_text)
+        
         if response_text.startswith("```json"):
             response_text = response_text[len("```json"):].strip()
-
         if response_text.endswith("```"):
             response_text = response_text[:-3].strip()
 
-        response_json = json.loads(response_text)
+        query_plan = json.loads(response_text)
     except json.JSONDecodeError as e:
-        print("not valid json response")
-        response_json = {}
+        print("Invalid JSON response:", e)
+        query_plan = {}
+
+    filters = query_plan.get("filters", {})
+    aggregation = query_plan.get("aggregation")
+    
+    print(f"Applying filters: {filters}")
+    if aggregation:
+        print(f"Applying aggregation: {aggregation}")
+    
+    results = apply_filters(df, filters, aggregation)
+    
+    return results
 
 
-    print(response_text)
-    filters = response_json.get("filters", {})
-    semantic_query = response_json.get("semantic_query", "")
-
-    print("results", filters, semantic_query)
-
-
-    return filters, semantic_query
-'''
+if __name__ == "__main__":
+    import asyncio
+    prompt = "Count the number of logs with severity INFO and group by ServiceName"
+    context = {
+        "discovered_patterns": "ServiceName: Accounting, Ad; SeverityText: INFO, WARN"
+    }
+    
+    result = asyncio.run(getquery(prompt, context))
+    print("Query Result:", json.dumps(result, indent=2))

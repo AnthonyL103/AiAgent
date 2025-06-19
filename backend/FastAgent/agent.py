@@ -7,9 +7,25 @@ fast = FastAgent("Log Assistant")
 
 @fast.agent(
     name="Dashboard logs/metrics assistant agent",
-    instruction="Use tools available to answer user queries about logs and metrics. If you don't know the answer, say 'I don't know'.",
+    instruction="""You are a log analysis assistant with access to two specialized tools.
+  
+  When analyzing logs, follow this intelligent workflow:
+  
+  1. **Explore first**: Use SearchLogsServer to understand log patterns
+     - "Show me some error logs" → See what error patterns look like
+     - Find examples to understand data structure
+     - If response is valid enough to answer user question workflow stops here.
+  
+  2. **Analyze second**: Use QueryLogsServer for structured counting
+     - Based on discoveries, do exact queries like "count ERROR logs by service"
+     - Use discovered service names, error types for precise filtering
+  
+  For "How many error logs?":
+  - Step 1: Search examples to see error types/services
+  - Step 2: Count using exact filters based on what you learned
+  """,
     model="gpt-4o",
-    servers=["search_logs"],  
+    servers=["QueryLogsServer","SearchLogsServer"],  
     use_history=True,
     human_input=True
 )
