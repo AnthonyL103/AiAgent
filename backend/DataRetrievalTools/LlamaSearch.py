@@ -24,7 +24,7 @@ Settings.llm = OpenAI(model="gpt-4o", api_key=os.getenv("API_KEY"))
 
 Settings.embed_model = HuggingFaceEmbedding(model_name="all-MiniLM-L6-v2")
 
-storage_context = StorageContext.from_defaults(persist_dir="DataRetrievalTools/index_storage")
+storage_context = StorageContext.from_defaults(persist_dir="DataRetrievalTools/LlamaIndex/index_storage")
 index = load_index_from_storage(storage_context)
 
 vector_store_info = VectorStoreInfo(
@@ -35,6 +35,7 @@ vector_store_info = VectorStoreInfo(
             type="str",
             description="Timestamp in format 'YYYY-MM-DD HH:MM:SS.nnnnnnnnn' (with nanoseconds). Example: '2025-06-08 11:31:41.222813500'. All logs are from June 8th, 2025. Use this for time-based filtering."
         ),
+        
     ],
 )
 
@@ -83,14 +84,18 @@ def extract_columns_info(nodes):
 async def search_logs_llama(prompt: str) -> str:
     query_result = query_engine.query(prompt)
     
-    sample_logs = [node.text for node in query_result.source_nodes[:3]]
+    sample_logs = [node.text for node in query_result.source_nodes]
     
     columns_info = extract_columns_info(query_result.source_nodes)
+    
+    
     
     result = {
         "sample_logs": sample_logs,
         "columns_info": columns_info,
         "total_found": len(query_result.source_nodes)
     }
+    print(result)
     
     return json.dumps(result, indent=2)
+

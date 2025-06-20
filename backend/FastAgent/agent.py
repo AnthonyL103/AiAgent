@@ -7,7 +7,8 @@ fast = FastAgent("Log Assistant")
 
 @fast.agent(
     name="Dashboard logs/metrics assistant agent",
-    instruction="""You are a log analysis assistant with access to two specialized tools.
+    instruction="""You are a log analysis assistant with access to two specialized tools. Never include large amounts of data in responses, 
+    try to include the important information and summarize the rest.
   
   When analyzing logs, follow this intelligent workflow:
   

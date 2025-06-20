@@ -35,8 +35,11 @@ for row in df.itertuples(index=False):
         metadata = {}
     process_runtime = metadata.get('process.runtime.name', '')
     text = f"{row.SeverityText} {row.ServiceName} {process_runtime} {row.message}"
+    print(f"Processing row: ServiceName: {row.ServiceName}, SeverityText: {row.SeverityText}, Process Runtime: {process_runtime}")
+    #print("Text:", text)
+    #print(f"Processing row: {row.timestamp_full}, ServiceName: {row.ServiceName}, SeverityText: {row.SeverityText}, Process Runtime: {process_runtime}")
             
-    doc = Document(text=text, metadata={"timestamp": row.timestamp_full})
+    doc = Document(text=text, metadata={"timestamp": str(row.timestamp_full), "ServiceName": str(row.ServiceName) or "UNAVAILABLE", "SeverityText": str(row.SeverityText) or "UNAVAILABLE", "process_runtime": str(process_runtime) or "UNAVAILABLE"})
     documents.append(doc)
         
 
