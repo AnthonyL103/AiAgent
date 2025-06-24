@@ -9,7 +9,7 @@ from DataRetrievalTools.LlamaSearch import search_logs_llama
 
 mcp = FastMCP("SearchLogsServer")
 
-@mcp.tool()
+@mcp.tool(description="Search logs semantically using LlamaIndex, with ability to filter by time. Good for finding examples semantically and providing context of logs and log structure.")
 async def search_logs(prompt: str) -> dict:
     return await search_logs_llama(prompt)
 
