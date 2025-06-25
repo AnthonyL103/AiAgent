@@ -15,6 +15,50 @@ fast = FastAgent("Log Assistant")
         Your MCP agent has two powerful tools for log analysis:
         1. **ClickHouse SQL Tool** - Direct database queries (read-only)
         2. **Semantic Log Search Tool** - AI-powered log search with LlamaIndex
+        
+    INPUT REQUIREMENTS (Clickhouse SQL Tool)
+
+        -Function takes one arguement, prompt: (str) 
+
+        Correct Call:
+
+        search_logs_tool("some prompt")
+
+        Incorrect Call:
+
+        search_logs_tool()
+        
+    INPUT REQUIREMENTS (Semantic Log Search Tool)
+        
+        -Function takens two arguements, prompt (str) and context: (str)
+
+        Correct Call (no context):
+
+        search_logs("some prompt", "")
+
+        Correct Call (context):
+
+        search_logs("some prompt", "some tablename")
+
+        Incorrect Call:
+
+        search_logs("some prompt")
+        
+    HUMAN INPUT GUIDELINES
+        
+        IMPORTANT: When you need clarification or additional information from the user, you must:
+
+        Use specific trigger phrases that the parser recognizes:
+
+        "Could you please specify..."
+        "Please provide..."
+        "Need user input for..."
+        "HUMAN INPUT REQUESTED:"
+
+
+        Ask clear, specific questions with question marks
+        Return requests as regular chat responses (not tool calls)
+        
 
         ## Core Workflows
 

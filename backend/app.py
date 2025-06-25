@@ -37,10 +37,8 @@ class ChatManager:
     
     def is_human_input_request(self, result: Any) -> bool:
         """Check if the result contains a human input request"""
-        # Convert result to string to analyze
         result_str = str(result)
         
-        # Look for common human input request patterns
         human_input_indicators = [
             "HUMAN INPUT REQUESTED",
             "__human_input_request",

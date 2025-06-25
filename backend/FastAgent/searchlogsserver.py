@@ -12,6 +12,25 @@ mcp = FastMCP("SearchLogsServer")
 description = """
 Search through log data using AI-powered semantic understanding via LlamaIndex vector embeddings. This tool excels at finding logs based on meaning, concepts, and context rather than exact text matches.
 
+
+INPUT REQUIREMENTS:
+
+-Function takens two arguements, prompt (str) and context: (str)
+
+Correct Call (no context):
+
+search_logs("some prompt", "")
+
+Correct Call (context):
+
+search_logs("some prompt", "some tablename")
+
+Incorrect Call:
+
+search_logs("some prompt")
+
+
+-Apply empty definitions for context if not applicable (ie, "")
 WHEN TO USE:
 - Finding examples of specific issues or behaviors ("authentication problems", "slow database queries")
 - Exploring log patterns when you don't know exact error messages
@@ -46,10 +65,7 @@ EXAMPLE QUERIES:
 - "database problems" → finds connection errors, query timeouts, deadlocks
 - "performance issues" → finds slow requests, high CPU usage, memory warnings
 
-INPUT:
 
--Search_logs takens two arguements, prompt (str) and context: (str)
--Apply empty definitions for context if not applicable (ie, "")
 """
 
 name="search_logs_semantically"

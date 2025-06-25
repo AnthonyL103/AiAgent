@@ -15,10 +15,29 @@ print("loading FAISS index and log texts...")
 #index = faiss.read_index('log_index.faiss')
 print("Loaded")
 
+import re
 
-column_names = [
-    'id','event', 'reason', 'regarding_kind', 'regarding_name', 'regarding_namespace',
-    'reporting_controller', 'type', 'cluster_id', 'event_time']
+
+Tables = client.query_dataframe("SHOW TABLES")
+embedding_tables = []
+
+#get all embedding tables
+for tablename in Tables:
+    if tablename.endswith('embeddings'):
+        log_ids = client.query_dataframe(f"SELECT log_id FROM {tablename} WHERE embeddings = NULL")
+        if len(log_ids) > 0:
+            og_tablename = re.sub(r'_embeddings*', '', tablename)
+            og_logs = client.query_dataframe(f"SELECT * FROM {og_tablename} WHERE log_id in {log_ids}")
+            
+            
+            
+           
+            
+
+
+        
+    
+
 
 df = client.query_dataframe(
     "SELECT log_id, timestamp, name, status, type, zone, cluster_id FROM cinder_volume_logs"

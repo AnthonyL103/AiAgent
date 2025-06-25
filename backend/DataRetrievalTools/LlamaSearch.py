@@ -15,15 +15,13 @@ from llama_index.core.query_engine import SubQuestionQueryEngine
 from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.vector_stores.types import MetadataInfo, VectorStoreInfo
 from DataRetrievalTools.CHVectorStore import ClickHouseVectorStore
-
-
-
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 load_dotenv()
 
 Settings.llm = OpenAI(model="gpt-4o", api_key=os.getenv("API_KEY"))
 Settings.embed_model = HuggingFaceEmbedding(model_name="all-MiniLM-L6-v2")
-
 
 def extract_columns_info(nodes):
     """Extract column names and sample values from search results"""
@@ -42,45 +40,29 @@ def extract_columns_info(nodes):
         for column, values in columns.items()
     }
 
-async def search_logs_llama(prompt: str, context: str) -> dict:
-    """Search logs using LlamaIndex with improved error handling"""
-    
+def sync_search_logs(prompt: str, context: str) -> dict:
     
     if not context:
-        return "function needs a table name as context"
+        return {"error": "function needs a table name as context"}
     
-    print(context)
     
-    vector_store = ClickHouseVectorStore(
-    host='localhost',
-    port=9000,
-    user='AgentDemo',
-    password='my_database',
-    table=context
-    )
+    try:
+        vector_store = ClickHouseVectorStore(
+            host='localhost',
+            port=9000,
+            user='AgentDemo',
+            password='my_database',
+            table=context
+        )
         
-    index = VectorStoreIndex.from_vector_store(vector_store)
-
-    vector_store_info = VectorStoreInfo(
-        content_info="Embedded plaintext parts of System logs",
-        metadata_info=[
-           
-        ],
-    )
-
-    retriever = VectorIndexAutoRetriever(
-        index,
-        vector_store_info=vector_store_info,
-        similarity_top_k=25,
-        verbose=True 
-    )
-
-    query_engine = RetrieverQueryEngine.from_args(
-        retriever=retriever,
-        response_mode="compact"
-    )
-
-    query_engine_tools = [
+        index = VectorStoreIndex.from_vector_store(vector_store)
+        
+        query_engine = index.as_query_engine(
+            similarity_top_k=10,
+            response_mode="compact"
+        )
+        
+        query_engine_tools = [
         QueryEngineTool(
             query_engine=query_engine,
             metadata=ToolMetadata(
@@ -90,13 +72,12 @@ async def search_logs_llama(prompt: str, context: str) -> dict:
         ),
     ]
 
-    full_query_engine = SubQuestionQueryEngine.from_defaults(
+        
+        full_query_engine = SubQuestionQueryEngine.from_defaults(
         query_engine_tools=query_engine_tools,
         use_async=True,
     )
-    
-
-    try:
+        
         query_result = full_query_engine.query(prompt)
         
         sample_logs = []
@@ -108,23 +89,56 @@ async def search_logs_llama(prompt: str, context: str) -> dict:
         )
         
         result = {
+            "table_used": context,
             "response": str(query_result.response) if hasattr(query_result, 'response') else "",
             "sample_logs": sample_logs,
             "columns_info": columns_info,
             "total_found": len(query_result.source_nodes) if hasattr(query_result, 'source_nodes') else 0
         }
         
-        print(result)
-        return json.dumps(result, indent=2)
+        return result
         
     except Exception as e:
         error_result = {
+            "table_used": context,
             "error": str(e),
             "sample_logs": [],
             "columns_info": {},
             "total_found": 0
         }
-        print(f"Error in search_logs_llama: {e}")
-        return json.dumps(error_result, indent=2)
+        return error_result
 
+async def search_logs_llama(prompt: str, context: str) -> dict:
+    """Async wrapper that runs the sync search in a thread pool"""
+    
+    if not context:
+        return {"error": "function needs a table name as context"}
+    
+    
+    try:
+        loop = asyncio.get_event_loop()
+        
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = await loop.run_in_executor(
+                executor,
+                sync_search_logs,
+                prompt,
+                context
+            )
+        
+        
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        return result
+        
+    except Exception as e:
+        error_result = {
+            "table_used": context,
+            "error": f"Async execution error: {str(e)}",
+            "sample_logs": [],
+            "columns_info": {},
+            "total_found": 0
+        }
+        return error_result
 

@@ -5,11 +5,82 @@ from mcp.server.fastmcp import FastMCP
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from DataRetrievalTools.QuerySearch import getquery
+from DataRetrievalTools.QuerySearch import apply_query
+from clickhouse_driver import Client
 
 mcp = FastMCP("QueryLogsServer")
+
+dbclient = Client(host='localhost', port=9000, user='AgentDemo', password='ILoveAgents45867760')
+
+
+def explore_schema():
+    """Quick function to explore available data structure"""
+    sql = "SHOW TABLES"
+    
+    tables = dbclient.execute(sql)
+    
+    schemacontext = {}
+    
+    try:
+        for name in tables:
+            clean_name = str(name).strip()
+            if clean_name.startswith("("):
+                clean_name = clean_name.replace("(", "").strip()
+            if clean_name.endswith(",)"):
+                clean_name = clean_name.replace(",)", "").strip()
+            print("clean name",clean_name)
+            schemacontext[clean_name] = (dbclient.execute(f"DESC {clean_name}"))
+            
+            return schemacontext
+    except Exception as e:
+        return {"error": "Schema info unavailable"}
+    
+Schema = explore_schema()
+    
 description = """
 Execute precise SQL queries directly against the ClickHouse log database with read-only access. This tool provides exact, quantitative analysis of log data with full SQL capabilities for filtering, aggregation, and analysis.
+
+Current Schema:
+
+{Schema}
+
+INPUT REQUIREMENTS:
+
+-Function takes one arguement, prompt: (str) 
+
+Correct Call:
+
+search_logs_tool("some prompt")
+
+Incorrect Call:
+
+search_logs_tool()
+
+QUERY GENERATION RULES:
+            1. ONLY generate SELECT statements (read-only operations)
+            2. Use proper ClickHouse syntax and functions
+            3. Always include appropriate WHERE clauses for filtering
+            4. Use LIMIT to prevent overwhelming results (default LIMIT 100 unless user specifies)
+            5. For time-based queries, use proper timestamp formatting
+            6. Consider using ClickHouse-specific functions like toHour(), toDate(), etc.
+            7. Group and order results logically when doing aggregations
+        
+
+            COMMON QUERY PATTERNS:
+            - Finding data based on tags: WHERE [COLUMNNAME] = 'ERROR' (Or however the error tag looks based on context given) 
+            - Time filtering: WHERE [COLUMNNAME] >= subtractHours(now(), 24)
+            - Aggregation: GROUP BY [COLUMNNAME] ORDER BY count() DESC
+            - Recent data: ORDER BY timestamp DESC LIMIT 50
+
+            CONTEXT USAGE:
+            - If you have context that shows specific field names, use those exact field names
+            - If you have context shows sample values, use those for filtering examples
+            - If you have context that indicates patterns, structure query to validate/quantify those patterns (specific tags, keywords, etc.)
+
+            OUTPUT FORMAT:
+            INPUT ONLY the SQL query. Do not include explanations, markdown formatting, or additional text.
+            If the request is unclear, generate a reasonable exploratory query. As you can take that as context to come up with a better query.
+
 
 WHEN TO USE:
 - Getting exact counts, statistics, and metrics
@@ -66,16 +137,13 @@ EXAMPLE WORKFLOWS:
 4. VALIDATE: Cross-check SQL results against semantic search examples
 
 
-INPUT:
 
--Search_logs_tool takes two arguements, prompt: (str) and context: (dict)
--Apply empty definitions for context if not applicable (ie, {})
 """
 
 name="execute_clickhouse_sql"
 @mcp.tool(name,description)
-async def search_logs_tool(prompt: str, context: dict) -> dict:
-    return await getquery(prompt, context)
+async def search_logs_tool(prompt: str) -> dict:
+    return await apply_query(prompt)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
