@@ -3,7 +3,9 @@ mcp:
     SearchLogsServer:
       command: "uv"
       args: ["run", "/Users/anthonyli/VDBSimSearchDemo/backend/FastAgent/searchlogsserver.py"]
-      
+    QueryLogsServer:
+      command: "uv"
+      args: ["run", "/Users/anthonyli/VDBSimSearchDemo/backend/FastAgent/querylogsserver.py"]
     
         
 llm:

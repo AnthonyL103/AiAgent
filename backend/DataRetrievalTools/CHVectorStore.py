@@ -14,13 +14,11 @@ logger = logging.getLogger(__name__)
 class ClickHouseVectorStore(BasePydanticVectorStore):
     stores_text: bool = Field(default=True)
     is_embedding_query: bool = Field(default=True)
-     # Initialize Pydantic fields, pydantic is for data validation and serialization, its a smart way to define classes that auto validate 
-    # data types and convert data types like 123 string into 123 integer, provide clear error msg, serilaize/deserialize lik convert from JSON to dict
-    # super goes up inheritance chain to llama index parent class for initializing custom vectore store wrappers
+    
     class Config:
         arbitrary_types_allowed = True 
     
-    def __init__(self, host='localhost', port=9000, user='AgentDemo', password='ILoveAgents45867760', table='my_vector_table', **kwargs):
+    def __init__(self, host, port, user, password, table, **kwargs):
         super().__init__(
             stores_text=True, 
             is_embedding_query=True,
@@ -29,6 +27,7 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
         
         self._client = Client(host='localhost', port=9000, user='AgentDemo', password='ILoveAgents45867760')
         self._table = table  
+        self._table_schema = None  # Cache table schema
         
         try:
             self._client.execute("SET allow_experimental_vector_similarity_index = 1")
@@ -38,21 +37,29 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
 
     @property
     def table(self) -> str:
-        """Get the table name."""
         return self._table
 
     @property
     def client(self) -> Client:
-        """Return the ClickHouse client instance."""
         return self._client
 
+    def _get_table_schema(self):
+        """Get and cache table schema"""
+        if self._table_schema is None:
+            try:
+                columns = self.client.execute(f"DESCRIBE TABLE {self.table}")
+                self._table_schema = {col[0]: col[1] for col in columns}
+            except Exception as e:
+                logger.error(f"Error getting table schema: {e}")
+                self._table_schema = {}
+        return self._table_schema
+
     def add(self, nodes: List[BaseNode]) -> List[str]:
-        """Add nodes to index. Not used in your workflow since you populate directly."""
         logger.warning("add() method called but you're populating the table directly. Skipping.")
         return []
 
     def query(self, query: VectorStoreQuery, **kwargs: Any) -> VectorStoreQueryResult:
-        """Query the vector store."""
+        """Universal query that works with any table"""
         if query.query_embedding is None:
             logger.error("Query embedding is None")
             return VectorStoreQueryResult(ids=[], similarities=[], nodes=[])
@@ -81,9 +88,9 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             if conditions:
                 where_clause = "WHERE " + " AND ".join(conditions)
         
+        # Universal query - select all columns
         sql = f"""
-        SELECT log_id, text_content, timestamp, Message, ServiceName, SeverityText, process_runtime,
-               cosineDistance(embedding, %(query_vector)s) AS dist
+        SELECT *, cosineDistance(embedding, %(query_vector)s) AS dist
         FROM {self.table}
         {where_clause}
         ORDER BY dist ASC
@@ -96,31 +103,52 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             logger.error(f"Error executing query: {e}")
             return VectorStoreQueryResult(ids=[], similarities=[], nodes=[])
         
+        # Get column names to map results
+        schema = self._get_table_schema()
+        column_names = list(schema.keys())
+        
         ids = []
         similarities = []
         nodes = []
         
-        for r in results:
-            log_id, text_content, timestamp, Message, service_name, severity_text, process_runtime, distance = r
+        for row in results:
+            # Map all columns to metadata (except specific ones)
+            metadata = {}
+            log_id = None
+            text_content = None
             
-            # Convert cosine distance to similarity (1 - distance)
+            for i, col_name in enumerate(column_names):
+                if i < len(row) - 1:  # -1 because last column is distance
+                    value = row[i]
+                    
+                    # Handle ID columns (different names in different tables)
+                    if col_name in ['log_id', 'volume_log_id', 'event_id', 'embedding_id']:
+                        log_id = str(value)
+                        metadata[col_name] = value
+                    elif col_name == 'text_content':
+                        text_content = str(value)
+                    elif col_name not in ['embedding']:
+                        metadata[col_name] = value
+            
+            # Distance is always the last column
+            distance = row[-1]
             similarity = 1.0 - distance
             
-            ids.append(str(log_id))  # Convert UUID to string
+            # Use log_id or fallback to first column
+            if log_id is None:
+                log_id = str(row[0])
+            
+            # Use text_content or fallback to a reasonable default
+            if text_content is None:
+                text_content = metadata.get('text_content', f"Record {log_id}")
+            
+            ids.append(log_id)
             similarities.append(similarity)
             
-            # Create TextNode with metadata
-            metadata = {
-                'timestamp': timestamp,
-                'Message': Message,
-                'ServiceName': service_name,
-                'SeverityText': severity_text,
-                'process_runtime': process_runtime
-            }
-            
+            # Create node with all available metadata
             node = TextNode(
                 text=text_content,
-                id_=str(log_id),  
+                id_=log_id,
                 metadata=metadata
             )
             nodes.append(node)
@@ -132,7 +160,6 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
         )
 
     def get(self, text_id: str) -> List[float]:
-        """Get embedding by text_id."""
         sql = f"SELECT embedding FROM {self.table} WHERE log_id = %(text_id)s"
         try:
             result = self.client.execute(sql, {'text_id': text_id})
@@ -142,7 +169,6 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             return []
 
     def delete(self, ref_doc_id: str, **delete_kwargs: Any) -> None:
-        """Delete by ref_doc_id."""
         sql = f"ALTER TABLE {self.table} DELETE WHERE log_id = %(ref_doc_id)s"
         try:
             self.client.execute(sql, {'ref_doc_id': ref_doc_id})
@@ -152,6 +178,4 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             raise
 
     def persist(self, persist_path: str, fs=None) -> None:
-        """Persist is handled by ClickHouse itself."""
         pass
-       
