@@ -27,7 +27,7 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
         
         self._client = Client(host='localhost', port=9000, user='AgentDemo', password='ILoveAgents45867760')
         self._table = table  
-        self._table_schema = None  # Cache table schema
+        self._table_schema = None  
         
         try:
             self._client.execute("SET allow_experimental_vector_similarity_index = 1")
@@ -67,7 +67,6 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
         vector = query.query_embedding
         top_k = query.similarity_top_k or 25
         
-        # Build WHERE clause for metadata filters
         where_clause = ""
         params = {'query_vector': vector}
         
@@ -88,7 +87,6 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             if conditions:
                 where_clause = "WHERE " + " AND ".join(conditions)
         
-        # Universal query - select all columns
         sql = f"""
         SELECT *, cosineDistance(embedding, %(query_vector)s) AS dist
         FROM {self.table}
@@ -103,7 +101,6 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
             logger.error(f"Error executing query: {e}")
             return VectorStoreQueryResult(ids=[], similarities=[], nodes=[])
         
-        # Get column names to map results
         schema = self._get_table_schema()
         column_names = list(schema.keys())
         
@@ -112,16 +109,14 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
         nodes = []
         
         for row in results:
-            # Map all columns to metadata (except specific ones)
             metadata = {}
             log_id = None
             text_content = None
             
             for i, col_name in enumerate(column_names):
-                if i < len(row) - 1:  # -1 because last column is distance
+                if i < len(row) - 1: 
                     value = row[i]
                     
-                    # Handle ID columns (different names in different tables)
                     if col_name in ['log_id', 'volume_log_id', 'event_id', 'embedding_id']:
                         log_id = str(value)
                         metadata[col_name] = value
@@ -130,22 +125,18 @@ class ClickHouseVectorStore(BasePydanticVectorStore):
                     elif col_name not in ['embedding']:
                         metadata[col_name] = value
             
-            # Distance is always the last column
             distance = row[-1]
             similarity = 1.0 - distance
             
-            # Use log_id or fallback to first column
             if log_id is None:
                 log_id = str(row[0])
             
-            # Use text_content or fallback to a reasonable default
             if text_content is None:
                 text_content = metadata.get('text_content', f"Record {log_id}")
             
             ids.append(log_id)
             similarities.append(similarity)
             
-            # Create node with all available metadata
             node = TextNode(
                 text=text_content,
                 id_=log_id,

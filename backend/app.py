@@ -8,6 +8,7 @@ import logging
 import json
 import uuid
 from typing import Dict, Any, Optional
+from backend.DataRetrievalTools.LogProcessingTools.embeddings import embedding_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,7 +20,6 @@ class ChatManager:
         self.pending_human_inputs: Dict[str, Dict] = {}
     
     async def start(self):
-        """Start persistent agent context"""
         if not self.agent_context:
             logger.info("Starting persistent agent context...")
             self.agent_context = fast.run()
@@ -27,7 +27,6 @@ class ChatManager:
             logger.info("Agent context started successfully")
     
     async def stop(self):
-        """Stop agent context"""
         if self.agent_context:
             logger.info("Stopping agent context...")
             await self.agent_context.__aexit__(None, None, None)
@@ -36,7 +35,6 @@ class ChatManager:
             logger.info("Agent context stopped")
     
     def is_human_input_request(self, result: Any) -> bool:
-        """Check if the result contains a human input request"""
         result_str = str(result)
         
         human_input_indicators = [
@@ -52,10 +50,8 @@ class ChatManager:
         return any(indicator in result_str for indicator in human_input_indicators)
     
     def extract_human_input_prompt(self, result: Any) -> Optional[str]:
-        """Extract the human input prompt from the result"""
         result_str = str(result)
         
-        # Try to extract the actual question being asked
         lines = result_str.split('\n')
         
         for line in lines:
@@ -65,16 +61,13 @@ class ChatManager:
                  'provide' in line.lower() or 
                  'enter' in line.lower() or
                  'what' in line.lower())):
-                # Clean up the line
                 cleaned = line.replace('│', '').replace('╭', '').replace('╰', '').strip()
                 if cleaned:
                     return cleaned
         
-        # Fallback to a generic prompt
         return "Please provide additional information:"
     
     async def chat(self, message: str) -> Dict[str, Any]:
-        """Send message to persistent agent and get immediate response"""
         if not self.agent:
             await self.start()
         
@@ -82,17 +75,13 @@ class ChatManager:
         result = await self.agent(message)
         logger.info("Received response from agent")
         
-        # Check if this is a human input request
         if self.is_human_input_request(result):
             logger.info("Detected human input request")
             
-            # Generate a unique request ID
             request_id = str(uuid.uuid4())
             
-            # Extract the prompt
             prompt = self.extract_human_input_prompt(result)
             
-            # Store the request for later continuation
             self.pending_human_inputs[request_id] = {
                 "original_query": message,
                 "agent_response": result,
@@ -107,7 +96,6 @@ class ChatManager:
                 "original_response": str(result)
             }
         
-        # Normal response
         return {
             "type": "normal_response",
             "result": str(result)
@@ -121,13 +109,10 @@ class ChatManager:
         pending_request = self.pending_human_inputs[request_id]
         logger.info(f"Submitting human input: {user_input}")
         
-        # Send the human input to the agent
         result = await self.agent(user_input)
         
-        # Clean up pending request
         del self.pending_human_inputs[request_id]
         
-        # Check if this triggers another human input request
         if self.is_human_input_request(result):
             logger.info("Another human input request detected")
             
@@ -155,13 +140,33 @@ class ChatManager:
 
 chat_manager = ChatManager()
 
+async def run_embedding_service():
+    while True:
+        try:
+            await embedding_service()
+            logger.info("Embedding service cycle completed")
+            
+        except Exception as e:
+            logger.error(f"Error with runnning embedding service: {e}")
+        
+        await asyncio.sleep(30)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    
+    embedding_task = asyncio.create_task(run_embedding_service())
     try:
         await chat_manager.start()
         logger.info("FastAPI app started with persistent agent")
         yield
     finally:
+        embedding_task.cancel()
+        
+        try:
+            await embedding_task
+        except asyncio.CancelledError:
+            pass
+        
         await chat_manager.stop()
         logger.info("FastAPI app shutdown complete")
 
@@ -192,10 +197,7 @@ class PromptResponse(BaseModel):
 
 @app.post("/get_prompt", response_model=PromptResponse)
 async def search_logs(prompt_request: PromptRequest):
-    """
-    Process user query with persistent conversation context.
-    Returns immediate response or human input request.
-    """
+
     try:
         user_query = prompt_request.prompt
         
@@ -228,7 +230,6 @@ async def search_logs(prompt_request: PromptRequest):
 
 @app.post("/submit_human_input")
 async def submit_human_input(input_request: HumanInputRequest):
-    """Submit human input and continue the conversation"""
     try:
         logger.info(f"Submitting human input for request {input_request.request_id}")
         
@@ -259,7 +260,6 @@ async def submit_human_input(input_request: HumanInputRequest):
 
 @app.get("/pending_requests")
 async def get_pending_requests():
-    """Get list of pending human input requests"""
     return {
         "pending_requests": list(chat_manager.pending_human_inputs.keys()),
         "count": len(chat_manager.pending_human_inputs)
@@ -267,7 +267,6 @@ async def get_pending_requests():
 
 @app.post("/reset_conversation")
 async def reset_conversation():
-    """Reset the conversation history while keeping the agent running"""
     try:
         logger.info("Resetting conversation...")
         chat_manager.pending_human_inputs.clear()
@@ -281,7 +280,6 @@ async def reset_conversation():
 
 @app.get("/health")
 async def health_check():
-    """Check if the app and agent are healthy"""
     try:
         if chat_manager.agent:
             return {"status": "healthy", "agent_status": "running"}
@@ -293,7 +291,6 @@ async def health_check():
 
 @app.get("/agent_status")
 async def agent_status():
-    """Get detailed agent status"""
     return {
         "agent_initialized": chat_manager.agent is not None,
         "context_active": chat_manager.agent_context is not None,

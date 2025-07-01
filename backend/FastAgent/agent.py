@@ -2,6 +2,8 @@
 import asyncio
 from mcp_agent.core.fastagent import FastAgent
 
+from backend.DataRetrievalTools.LogProcessingTools.embeddings import embedding_service
+
 # Create the FastAgent application
 fast = FastAgent("Log Assistant")
 
@@ -346,7 +348,12 @@ async def log_assistant():
 
 async def main():
     """Entry point that runs the agent"""
+    
     await log_assistant()
+            
+        
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
+   
